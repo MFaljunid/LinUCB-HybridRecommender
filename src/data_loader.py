@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from config import DATA_DIR, SEED
-
 def load_data(dataset_size='100k'):
     """تحميل بيانات MovieLens"""
     print(f"Loading {dataset_size} dataset...")
@@ -24,6 +23,14 @@ def load_data(dataset_size='100k'):
         sep_movies = '::'
     else:
         raise ValueError("Invalid dataset_size! Use '100k' or '1m'.")
+
+    # التحقق من وجود الملفات
+    if not os.path.exists(ratings_path):
+        raise FileNotFoundError(f"Ratings file not found: {ratings_path}")
+    if not os.path.exists(users_path):
+        raise FileNotFoundError(f"Users file not found: {users_path}")
+    if not os.path.exists(movies_path):
+        raise FileNotFoundError(f"Movies file not found: {movies_path}")
 
     # تحميل بيانات التقييمات
     ratings = pd.read_csv(
@@ -76,16 +83,24 @@ def load_data(dataset_size='100k'):
     data = ratings.merge(user_features, on='user_id')
     data = data.merge(item_features, on='item_id')
 
-    # تحويل السمات الفئوية إلى رقمية
-    data['gender'] = data['gender'].map({'M': 0, 'F': 1})
+    # معالجة السمات النصية إلى قيم رقمية
+    data['gender'] = data['gender'].map({'M': 0, 'F': 1})  # تحويل 'M' و 'F' إلى قيم رقمية
     occupation_map = {occ: i for i, occ in enumerate(data['occupation'].unique())}
     data['occupation'] = data['occupation'].map(occupation_map)
+
+    # معالجة بيانات الأفلام: تحويل 'release_date' إلى datetime
+    item_features['release_date'] = pd.to_datetime(item_features['release_date'], errors='coerce')
 
     # تطبيع السمات الرقمية
     scaler = MinMaxScaler()
     if 'age' in data.columns:
         data['age'] = scaler.fit_transform(data[['age']])
     data['rating'] = scaler.fit_transform(data[['rating']])
+
+    # التحقق من القيم المفقودة في item_features وملء القيم المفقودة
+    if item_features.isnull().sum().any():
+        print("Missing values in item_features. Filling missing values...")
+        item_features.fillna(method='ffill', inplace=True)  # ملء القيم المفقودة بالمتابعة للأمام
 
     # إنشاء فهارس للمستخدمين والعناصر
     user_ids = data['user_id'].unique()

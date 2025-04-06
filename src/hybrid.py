@@ -1,7 +1,6 @@
 import numpy as np
 from collections import defaultdict
 from .linucb import LinUCB
-
 class HybridRecommender:
     """النموذج الهجين للتوصية"""
     def __init__(self, svd_model, ncf_model, user_factors_svd, item_factors_svd, 
@@ -33,11 +32,7 @@ class HybridRecommender:
         item_genres = item_feats[self.item_features.columns[5:]].values[0]
         context_feats = np.concatenate([user_context, item_genres])
 
-        ncf_pred = self.ncf_model.predict([
-            np.array([user_idx]), 
-            np.array([item_idx]), 
-            np.array([context_feats])
-        ])[0][0]
+        ncf_pred = self.ncf_model.predict([np.array([user_idx]), np.array([item_idx]), np.array([context_feats])])[0][0]
 
         popularity = len(self.item_features[self.item_features['item_id'] == item_id])
         history_len = len(self.user_history[user_id])
@@ -45,50 +40,21 @@ class HybridRecommender:
         context = np.concatenate([svd_features, [ncf_pred], [popularity], [history_len]])
         return context
 
-    def recommend(self, user_id, candidate_items, k=5):
-        """توليد توصيات للمستخدم"""
-        svd_scores = []
-        ncf_scores = []
-
-        for item_id in candidate_items:
-            user_factor = self.user_factors_svd.get(user_id, np.zeros(50))
-            item_factor = self.item_factors_svd.get(item_id, np.zeros(50))
-            svd_scores.append(np.dot(user_factor, item_factor))
-
-            user_idx = self.user_to_index[user_id]
-            item_idx = self.item_to_index[item_id]
-
-            item_feats = self.item_features[self.item_features['item_id'] == item_id]
-            user_feats = self.user_features[self.user_features['user_id'] == user_id]
-
-            user_context = user_feats[['age', 'gender', 'occupation']].values[0]
-            item_genres = item_feats[self.item_features.columns[5:]].values[0]
-            context_feats = np.concatenate([user_context, item_genres])
-
-            ncf_score = self.ncf_model.predict([
-                np.array([user_idx]), 
-                np.array([item_idx]), 
-                np.array([context_feats])
-            ])[0][0]
-            ncf_scores.append(ncf_score)
-
-        combined_scores = 0.6 * np.array(ncf_scores) + 0.4 * np.array(svd_scores)
-        top_indices = np.argsort(combined_scores)[-2*k:]
-        top_candidates = [candidate_items[i] for i in top_indices]
-
+    def recommend(self, user_id, all_items, k=5):
+        """التوصية بأعلى العناصر للمستخدم"""
+        # تحديد العناصر الأعلى تصنيفًا باستخدام سياق المستخدم
         recommendations = []
-        for item_id in top_candidates:
-            context = self.get_user_context(user_id, item_id)
-            arm = self.bandit.select_arm(context)
-            recommendations.append((item_id, arm, context))
-
+        user_history = self.user_history[user_id]
+        
+        # الحصول على التوصيات لكل عنصر بناءً على السياق
+        for item_id in all_items:
+            if item_id not in user_history:  # إذا لم يتم التفاعل مع هذا العنصر من قبل
+                context = self.get_user_context(user_id, item_id)
+                score = np.dot(self.bandit.get_arm_weights(context), context)  # مثال على كيفية استخدام السياق
+                recommendations.append((item_id, score))
+        
+        # ترتيب العناصر حسب التصنيف الأعلى
         recommendations.sort(key=lambda x: x[1], reverse=True)
-        final_recs = [rec[0] for rec in recommendations[:k]]
-        return final_recs
-
-    def update_feedback(self, user_id, item_id, reward):
-        """تحديث النموذج بناءً على التغذية الراجعة"""
-        context = self.get_user_context(user_id, item_id)
-        arm = self.bandit.select_arm(context)
-        self.bandit.update(arm, context, reward)
-        self.user_history[user_id].append(item_id)
+        
+        # إرجاع أعلى k عناصر
+        return [item[0] for item in recommendations[:k]]

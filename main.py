@@ -18,28 +18,48 @@ def main():
         # تحميل البيانات
         data, user_features, item_features, user_to_index, item_to_index = load_data('100k')
         print("Data loaded successfully!")
-        
-        # تقسيم البيانات
+
+        # التحقق من أنواع البيانات
+        print("Item ID dtype:", item_features['item_id'].dtype)
+        print("User ID dtype:", user_features['user_id'].dtype)
+        print("Item Features dtypes:\n", item_features.dtypes)
+        print("User Features dtypes:\n", user_features.dtypes)
+
+        # تقسيم البيانات إلى تدريب واختبار
         train_data, test_data = split_data(data)
-        
+
         # تدريب نموذج SVD
         svd_model, user_factors_svd, item_factors_svd = train_svd_model(train_data)
-        
-        # تحضير بيانات NCF
+
+        # تحضير بيانات NCF للتدريب
+        # train_user_indices, train_item_indices, train_context, train_ratings = prepare_ncf_data(
+        #     train_data, item_features, user_to_index, item_to_index
+        # )
+
+        # # طباعة معلومات عن بيانات التدريب
+        # print(f"Train user_indices dtype: {train_user_indices.dtype}, shape: {train_user_indices.shape}")
+        # print(f"Train item_indices dtype: {train_item_indices.dtype}, shape: {train_item_indices.shape}")
+        # print(f"Train context_features dtype: {train_context.dtype}, shape: {train_context.shape}")
+
+        # تحضير بيانات NCF للاختبار
         train_user_indices, train_item_indices, train_context, train_ratings = prepare_ncf_data(
-            train_data, item_features, user_to_index, item_to_index
+            train_data, item_features, user_to_index, item_to_index, user_features
         )
+
         test_user_indices, test_item_indices, test_context, test_ratings = prepare_ncf_data(
-            test_data, item_features, user_to_index, item_to_index
+            test_data, item_features, user_to_index, item_to_index, user_features
         )
-        
+        print(f"Test user_indices shape: {test_user_indices.shape}")
+        print(f"Test item_indices shape: {test_item_indices.shape}")
+        print(f"Test context_features shape: {test_context.shape}")
+
         # بناء وتدريب نموذج NCF
         ncf_model = build_ncf_model(
-            len(user_to_index), 
-            len(item_to_index), 
-            train_context.shape[1]
+            num_users=len(user_to_index),
+            num_items=len(item_to_index),
+            context_dim=train_context.shape[1]
         )
-        
+
         ncf_model.fit(
             [train_user_indices, train_item_indices, train_context],
             train_ratings,
@@ -48,8 +68,8 @@ def main():
             validation_data=([test_user_indices, test_item_indices, test_context], test_ratings),
             verbose=1
         )
-        
-        # تهيئة النموذج الهجين
+
+        # تهيئة نموذج التوصية الهجين
         recommender = HybridRecommender(
             svd_model=svd_model,
             ncf_model=ncf_model,
@@ -60,21 +80,21 @@ def main():
             item_features=item_features,
             user_features=user_features
         )
-        
+
         # تقييم النموذج
         hit_rate, ndcg = evaluate_recommender(recommender, test_data, item_features)
         print(f"Hit Rate @5: {hit_rate:.4f}")
         print(f"NDCG @5: {ndcg:.4f}")
-        
-        # مثال على التوصيات
+
+        # عرض التوصيات لمستخدم معيّن
         user_id = test_data['user_id'].iloc[0]
         all_items = test_data['item_id'].unique()
         recommended_items = recommender.recommend(user_id, all_items, k=5)
-        
+
         print(f"\nRecommendations for user {user_id}:")
         for i, item_id in enumerate(recommended_items, 1):
             print(f"{i}. {get_movie_title(item_id, item_features)}")
-            
+
     except Exception as e:
         print(f"Error: {str(e)}")
         print("\nTroubleshooting tips:")
