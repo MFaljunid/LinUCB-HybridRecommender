@@ -8,7 +8,7 @@ def load_data(dataset_size='100k'):
     """تحميل بيانات MovieLens"""
     print(f"Loading {dataset_size} dataset...")
 
-    data_dir = os.path.join(DATA_DIR, dataset_size)
+    data_dir = os.path.join('C:/Users/lenovo/Desktop/Explainable_CF_Project/data/', dataset_size)
     
     if dataset_size == '100k':
         ratings_path = os.path.join(data_dir, 'u.data')
