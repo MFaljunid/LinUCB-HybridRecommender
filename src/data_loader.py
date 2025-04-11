@@ -3,34 +3,35 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from config import DATA_DIR, SEED
+
+
+import os
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
 def load_data(dataset_size='100k'):
-    """تحميل بيانات MovieLens"""
+    """تحميل بيانات التقييمات والمستخدمين والأفلام"""
     print(f"Loading {dataset_size} dataset...")
 
-    data_dir = os.path.join('C:/Users/lenovo/Desktop/Explainable_CF_Project/data/', dataset_size)
+    data_dir = os.path.join('data/', dataset_size)
     
     if dataset_size == '100k':
         ratings_path = os.path.join(data_dir, 'u.data')
         users_path = os.path.join(data_dir, 'u.user')
         movies_path = os.path.join(data_dir, 'u.item')
         sep_ratings = '\t'
+        sep_users = '|'
         sep_movies = '|'
     elif dataset_size == '1m':
         ratings_path = os.path.join(data_dir, 'ratings.dat')
         users_path = os.path.join(data_dir, 'users.dat')
         movies_path = os.path.join(data_dir, 'movies.dat')
         sep_ratings = '::'
+        sep_users = '::'
         sep_movies = '::'
     else:
         raise ValueError("Invalid dataset_size! Use '100k' or '1m'.")
-
-    # التحقق من وجود الملفات
-    if not os.path.exists(ratings_path):
-        raise FileNotFoundError(f"Ratings file not found: {ratings_path}")
-    if not os.path.exists(users_path):
-        raise FileNotFoundError(f"Users file not found: {users_path}")
-    if not os.path.exists(movies_path):
-        raise FileNotFoundError(f"Movies file not found: {movies_path}")
 
     # تحميل بيانات التقييمات
     ratings = pd.read_csv(
@@ -44,18 +45,17 @@ def load_data(dataset_size='100k'):
     if dataset_size == '100k':
         user_features = pd.read_csv(
             users_path, 
-            sep='|',
+            sep=sep_users,
             names=['user_id', 'age', 'gender', 'occupation', 'zip_code'],
             encoding='latin-1'
         )
-    else:  # إنشاء بيانات وهمية لمجموعة 1m
-        unique_users = ratings['user_id'].unique()
-        user_features = pd.DataFrame({
-            'user_id': unique_users,
-            'age': np.random.randint(10, 70, size=len(unique_users)),
-            'gender': np.random.choice(['M', 'F'], size=len(unique_users)),
-            'occupation': np.random.choice(['student', 'engineer', 'teacher'], size=len(unique_users))
-        })
+    else:
+        user_features = pd.read_csv(
+            users_path,
+            sep=sep_users,
+            names=['user_id', 'gender', 'age', 'occupation', 'zip_code'],
+            encoding='latin-1'
+        )
 
     # تحميل بيانات الأفلام
     if dataset_size == '100k':
@@ -69,7 +69,7 @@ def load_data(dataset_size='100k'):
                    'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'],
             encoding='latin-1'
         )
-    else:  # معالجة بيانات الأفلام لمجموعة 1m
+    else:
         item_features = pd.read_csv(
             movies_path, 
             sep=sep_movies,
@@ -79,33 +79,23 @@ def load_data(dataset_size='100k'):
         genres = item_features['genres'].str.get_dummies(sep='|')
         item_features = pd.concat([item_features, genres], axis=1)
 
-    # دمج البيانات
-    data = ratings.merge(user_features, on='user_id')
-    data = data.merge(item_features, on='item_id')
-
-    # معالجة السمات النصية إلى قيم رقمية
-    data['gender'] = data['gender'].map({'M': 0, 'F': 1})  # تحويل 'M' و 'F' إلى قيم رقمية
-    occupation_map = {occ: i for i, occ in enumerate(data['occupation'].unique())}
-    data['occupation'] = data['occupation'].map(occupation_map)
-
-    # معالجة بيانات الأفلام: تحويل 'release_date' إلى datetime
-    item_features['release_date'] = pd.to_datetime(item_features['release_date'], errors='coerce')
-
-    # تطبيع السمات الرقمية
+    # معالجة البيانات
+    ratings = ratings[['user_id', 'item_id', 'rating']]
+    user_features = user_features[['user_id', 'age', 'gender', 'occupation']]
+    
+    # تحويل الجنس إلى قيم رقمية
+    user_features['gender'] = user_features['gender'].map({'M': 0, 'F': 1}).fillna(0)
+    
+    # تحويل المهنة إلى رقمية
+    user_features['occupation'] = user_features['occupation'].astype('category').cat.codes
+    
+    # تطبيع البيانات
     scaler = MinMaxScaler()
-    if 'age' in data.columns:
-        data['age'] = scaler.fit_transform(data[['age']])
-    data['rating'] = scaler.fit_transform(data[['rating']])
-
-    # التحقق من القيم المفقودة في item_features وملء القيم المفقودة
-    if item_features.isnull().sum().any():
-        print("Missing values in item_features. Filling missing values...")
-        item_features.fillna(method='ffill', inplace=True)  # ملء القيم المفقودة بالمتابعة للأمام
+    user_features['age'] = scaler.fit_transform(user_features[['age']])
+    ratings['rating'] = scaler.fit_transform(ratings[['rating']])
 
     # إنشاء فهارس للمستخدمين والعناصر
-    user_ids = data['user_id'].unique()
-    item_ids = data['item_id'].unique()
-    user_to_index = {user_id: idx for idx, user_id in enumerate(user_ids)}
-    item_to_index = {item_id: idx for idx, item_id in enumerate(item_ids)}
+    user_to_index = {user_id: idx for idx, user_id in enumerate(ratings['user_id'].unique())}
+    item_to_index = {item_id: idx for idx, item_id in enumerate(ratings['item_id'].unique())}
 
-    return data, user_features, item_features, user_to_index, item_to_index
+    return ratings, user_features, item_features, user_to_index, item_to_index
