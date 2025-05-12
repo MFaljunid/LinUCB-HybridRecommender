@@ -4,11 +4,9 @@ from src.linucb import LinUCB
 from src.utils import ensure_vector_length
 
 class HybridRecommender:
-    """النموذج الهجين للتوصية"""
     
     def __init__(self, svd_model, ncf_model, user_factors_svd, item_factors_svd, 
                  user_to_index, item_to_index, item_features, user_features, n_arms=10):
-        """تهيئة النموذج الهجين"""
         self.svd_model = svd_model
         self.ncf_model = ncf_model
         self.user_factors_svd = user_factors_svd
@@ -34,8 +32,6 @@ class HybridRecommender:
         self.bandit = LinUCB(n_arms=n_arms, context_dim=context_dim)
     
     def get_user_context(self, user_id, item_id):
-        """بناء متجه السياق للمستخدم والعنصر"""
-        # عوامل SVD (يجب أن يكون طولها 50)
         svd_user = self.user_factors_svd.get(user_id, np.zeros(50))
         svd_item = self.item_factors_svd.get(item_id, np.zeros(50))
         svd_features = np.concatenate([svd_user, svd_item])  # الطول الآن 100
@@ -44,7 +40,6 @@ class HybridRecommender:
         user_idx = self.user_to_index[user_id]
         item_idx = self.item_to_index[item_id]
         
-        # ميزات المستخدم والعنصر
         user_feats = self.user_features[self.user_features['user_id'] == user_id]
         item_feats = self.item_features[self.item_features['item_id'] == item_id]
         
@@ -79,23 +74,26 @@ class HybridRecommender:
             context = np.pad(context, (0, expected_length - len(context)), 'constant')
         
         return context
-    
+
     def recommend(self, user_id, all_items, k=5):
         """توليد التوصيات للمستخدم"""
         recommendations = []
         user_history = self.user_history[user_id]
-        
+
         for item_id in all_items:
             if item_id not in user_history:  # تجنب العناصر التي شاهدها المستخدم مسبقًا
-                context = self.get_user_context(user_id, item_id)
-                score = np.dot(self.bandit.get_arm_weights(context), context)
-                recommendations.append((item_id, score))
+                try:
+                    context = self.get_user_context(user_id, item_id)
+                    score = np.dot(self.bandit.get_arm_weights(context), context)
+                    recommendations.append((item_id, score))
+                except Exception as e:
+                    print(f"Error processing item {item_id} for user {user_id}: {str(e)}")
         
         # ترتيب العناصر حسب أعلى درجة
         recommendations.sort(key=lambda x: x[1], reverse=True)
-        
+
         # إرجاع أفضل k عناصر
-        return [item[0] for item in recommendations[:k]]
+        return [item for item, _ in recommendations[:k]]
     
     def update_feedback(self, user_id, item_id, reward):
         """تحديث النموذج بناءً على تفاعل المستخدم"""
